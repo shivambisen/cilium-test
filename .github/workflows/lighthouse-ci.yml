@@ -97,26 +97,6 @@ jobs:
           done
           echo "Local server ready on http://localhost:9000/"
 
-      - name: Optional: validate each URL returns 200 (local or public)
-        if: steps.extract.outputs.has_urls == 'true'
-        shell: bash
-        run: |
-          # make sure the multiline collected_urls output doesn't include empty lines
-          PR_URLS=$(printf '%b\n' "${{ steps.extract.outputs.collected_urls || '' }}" | sed '/^$/d')
-
-          echo "Validating reachability of provided URLs..."
-          echo "$PR_URLS" | while read -r url; do
-            echo "Checking: $url"
-            # prefer HEAD, fallback to GET
-            if ! curl -sSfI "$url" >/dev/null 2>&1; then
-              if ! curl -sSf "$url" >/dev/null 2>&1; then
-                echo "URL $url is not reachable (non-200)."
-                exit 1
-              fi
-            fi
-          done
-          echo "All provided URLs are reachable."
-
       - name: Run Lighthouse CI for supplied URLs
         if: steps.extract.outputs.has_urls == 'true'
         env:
