@@ -1,6 +1,6 @@
 name: CI - LHCI for PR URLs (supports localhost)
-on: pull_request
 
+on: pull_request
 
 jobs:
   lhci:
@@ -23,20 +23,23 @@ jobs:
             exit 0
           fi
 
-          ARGS=""
+          ARGS=()
           ANY_LOCALHOST=false
           CLEANED_LIST=""
 
-          for u in $URLS; do
+          printf '%s\n' "$URLS" | while IFS= read -r u; do
             clean=$(echo "$u" | sed 's/[),.;:]*$//')
-            ARGS="$ARGS --collect.url=$clean"
+            ARGS+=("--collect.url=$clean")
             CLEANED_LIST="$CLEANED_LIST$clean\n"
+
             if echo "$clean" | grep -E 'https?://(localhost|127\.0\.0\.1)(:[0-9]+)?' >/dev/null; then
               ANY_LOCALHOST=true
             fi
           done
 
-          echo "ARGS=$ARGS" >> $GITHUB_ENV
+          # Bash arrays are not directly exportable to env, so join with space
+          ARGS_STR="${ARGS[*]}"
+          echo "ARGS=$ARGS_STR" >> $GITHUB_ENV
 
           {
             echo "collected_urls<<EOF"
@@ -91,11 +94,13 @@ jobs:
         if: steps.extract.outputs.has_urls == 'true'
         env:
           LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+        shell: bash
         run: |
           npm install -g @lhci/cli@0.15.x
           if [ -z "${ARGS}" ]; then
             echo "No ARGS found, nothing to run."
             exit 0
           fi
-          echo "Running: lhci autorun $ARGS"
-          eval "lhci autorun $ARGS"
+          echo "Running: lhci autorun ${ARGS}"
+          # Use 'eval' carefully, but here replacing with 'lhci autorun' with args expanded:
+          lhci autorun ${ARGS}
