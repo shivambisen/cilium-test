@@ -11,8 +11,7 @@
 <p align="center">
   <a href="https://cilium.io">
     <img src="https://img.shields.io/badge/Website-cilium.io-blue?style=for-the-badge">
-  </a>
-  <a href="https://docs.cilium.io/en/stable/">
+  </ahref="https://docs.cilium.io/en/stable/">
     <img src="https://img.shields.io/badge/Docs-docs.cilium.io-green?style=for-the-badge">
   </a>
   <a href="https://github.com/cilium/cilium">
