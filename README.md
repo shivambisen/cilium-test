@@ -6,7 +6,7 @@
     <img src="https://cdn.jsdelivr.net/gh/cilium/cilium@main/Documentation/images/logo-dark.png" width="350" alt="Cilium Logo">
   </picture>
 </div>
-fsfdfsd
+fsfd
 dsdsdvcv
 
 <!-- Horizontal badges -->
