@@ -7,6 +7,8 @@
   </picture>
 </div>
 
+hi
+
 <!-- Horizontal badges -->
 <p align="center">
   <a href="https://cilium.io">
