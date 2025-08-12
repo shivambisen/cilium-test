@@ -1,6 +1,9 @@
 name: CI - LHCI for PR URLs (supports localhost)
 
-on: pull_request
+on:
+  pull_request:
+    branches:
+      - main
 
 jobs:
   lhci:
@@ -11,54 +14,49 @@ jobs:
 
     steps:
       - name: Extract URLs from PR body
-  id: extract
-  shell: bash
-  run: |
-    # Save PR body to a file with safe heredoc expansion
-    cat <<'EOF' > pr_body.txt
-${{ github.event.pull_request.body || '' }}
-EOF
+        id: extract
+        shell: bash
+        env:
+          PR_BODY: ${{ github.event.pull_request.body || '' }}
+        run: |
+          # Use the PR_BODY env var safely
+          echo "$PR_BODY" > pr_body.txt
 
-    PR_BODY=$(cat pr_body.txt)
+          URLS=$(grep -Eo 'https?://[^[:space:)\]"\']+' pr_body.txt || true)
 
-    # Extract URLs from PR_BODY safely
-    URLS=$(printf '%s\n' "$PR_BODY" | grep -Eo 'https?://[^[:space:)\]"\']+' || true)
+          if [ -z "$URLS" ]; then
+            echo "No URLs found in PR body."
+            echo "has_urls=false" >> $GITHUB_OUTPUT
+            echo "has_localhost=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
 
-    if [ -z "$URLS" ]; then
-      echo "No URLs found in PR body."
-      echo "has_urls=false" >> $GITHUB_OUTPUT
-      echo "has_localhost=false" >> $GITHUB_OUTPUT
-      exit 0
-    fi
+          ARGS=""
+          ANY_LOCALHOST=false
+          CLEANED_LIST=""
 
-    ARGS=""
-    ANY_LOCALHOST=false
-    CLEANED_LIST=""
+          while IFS= read -r u; do
+            clean=$(echo "$u" | sed 's/[),.;:]*$//')
+            ARGS="$ARGS --collect.url=$clean"
+            CLEANED_LIST="$CLEANED_LIST$clean\n"
+            if echo "$clean" | grep -E 'https?://(localhost|127\.0\.0\.1)(:[0-9]+)?' >/dev/null; then
+              ANY_LOCALHOST=true
+            fi
+          done <<< "$URLS"
 
-    # Use a while-read loop with process substitution for safe line reading
-    while IFS= read -r u; do
-      clean=$(echo "$u" | sed 's/[),.;:]*$//')
-      ARGS="$ARGS --collect.url=$clean"
-      CLEANED_LIST="$CLEANED_LIST$clean\n"
+          echo "ARGS=$ARGS" >> $GITHUB_ENV
 
-      if echo "$clean" | grep -E 'https?://(localhost|127\.0\.0\.1)(:[0-9]+)?' >/dev/null; then
-        ANY_LOCALHOST=true
-      fi
-    done <<< "$URLS"
+          echo "collected_urls<<EOF" >> $GITHUB_OUTPUT
+          printf '%b' "$CLEANED_LIST" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
-    echo "ARGS=$ARGS" >> $GITHUB_ENV
+          echo "has_urls=true" >> $GITHUB_OUTPUT
 
-    echo "collected_urls<<EOF" >> $GITHUB_OUTPUT
-    printf '%b' "$CLEANED_LIST" >> $GITHUB_OUTPUT
-    echo "EOF" >> $GITHUB_OUTPUT
-
-    echo "has_urls=true" >> $GITHUB_OUTPUT
-
-    if [ "$ANY_LOCALHOST" = true ]; then
-      echo "has_localhost=true" >> $GITHUB_OUTPUT
-    else
-      echo "has_localhost=false" >> $GITHUB_OUTPUT
-    fi
+          if [ "$ANY_LOCALHOST" = true ]; then
+            echo "has_localhost=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_localhost=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Show collected URLs (debug)
         if: steps.extract.outputs.has_urls == 'true'
@@ -110,5 +108,4 @@ EOF
           fi
 
           echo "Running: lhci autorun ${ARGS}"
-          # Run LHCI with all --collect.url arguments expanded
           lhci autorun ${ARGS}
