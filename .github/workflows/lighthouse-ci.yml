@@ -25,6 +25,7 @@ jobs:
           if [ -z "$URLS" ]; then
             echo "No URLs found in PR body."
             echo "has_urls=false" >> $GITHUB_OUTPUT
+            echo "has_localhost=false" >> $GITHUB_OUTPUT
             exit 0
           fi
 
@@ -44,9 +45,12 @@ jobs:
             fi
           done
 
+          # export args for later steps
           echo "ARGS=$ARGS" >> $GITHUB_ENV
+
+          # export collected list as a multiline output for debugging
           echo "collected_urls<<EOF" >> $GITHUB_OUTPUT
-          echo -e "$CLEANED_LIST" >> $GITHUB_OUTPUT
+          printf '%b' "$CLEANED_LIST" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
           echo "has_urls=true" >> $GITHUB_OUTPUT
@@ -59,10 +63,10 @@ jobs:
       - name: Show collected URLs (debug)
         if: steps.extract.outputs.has_urls == 'true'
         run: |
-          echo "Collected URLs:"
+          echo "Collected URLs from PR body:"
           printf '%b\n' "${{ steps.extract.outputs.collected_urls || '' }}"
 
-      - name: Checkout code
+      - name: Checkout code (only if localhost URLs provided)
         if: steps.extract.outputs.has_localhost == 'true'
         uses: actions/checkout@v3
         with:
@@ -78,11 +82,9 @@ jobs:
         if: steps.extract.outputs.has_localhost == 'true'
         shell: bash
         run: |
-          # Serve ./public on port 9000 (common for your config)
-          # You can change the command/port if you serve differently.
+          # serve ./public on port 9000; change if you use a different tool or port
           npx http-server ./public -p 9000 --silent &
 
-          # Wait until server responds 200 or timeout after 60s
           TIMEOUT=60
           START=0
           until curl -sSf http://localhost:9000/ >/dev/null; do
@@ -97,20 +99,23 @@ jobs:
 
       - name: Optional: validate each URL returns 200 (local or public)
         if: steps.extract.outputs.has_urls == 'true'
+        shell: bash
         run: |
-          # check each URL for 200; non-200 will fail this step
-          PR_URLS=$(printf '%s\n' "${{ steps.extract.outputs.collected_urls || '' }}" | sed '/^$/d')
+          # make sure the multiline collected_urls output doesn't include empty lines
+          PR_URLS=$(printf '%b\n' "${{ steps.extract.outputs.collected_urls || '' }}" | sed '/^$/d')
+
+          echo "Validating reachability of provided URLs..."
           echo "$PR_URLS" | while read -r url; do
-            echo "Checking $url"
-            # Allow HEAD then GET fallback
+            echo "Checking: $url"
+            # prefer HEAD, fallback to GET
             if ! curl -sSfI "$url" >/dev/null 2>&1; then
-              # try full GET (some servers don't respond to HEAD)
               if ! curl -sSf "$url" >/dev/null 2>&1; then
                 echo "URL $url is not reachable (non-200)."
                 exit 1
               fi
             fi
           done
+          echo "All provided URLs are reachable."
 
       - name: Run Lighthouse CI for supplied URLs
         if: steps.extract.outputs.has_urls == 'true'
@@ -119,7 +124,6 @@ jobs:
         run: |
           npm install -g @lhci/cli@0.15.x
 
-          # ARGS exported earlier from extract step
           if [ -z "${ARGS}" ]; then
             echo "No ARGS found, nothing to run."
             exit 0
