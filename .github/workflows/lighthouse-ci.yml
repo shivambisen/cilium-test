@@ -3,7 +3,7 @@ name: CI - LHCI for PR URLs (supports localhost)
 on:
   pull_request:
     branches:
-      - main
+      - lighthouse-CI
 
 jobs:
   lhci:
@@ -16,14 +16,12 @@ jobs:
       - name: Extract URLs from PR body
         id: extract
         shell: bash
+        env:
+          PR_BODY: ${{ github.event.pull_request.body || '' }}
         run: |
-          PR_BODY="${{ github.event.pull_request.body || '' }}"
-
-          # find http(s) urls
-          URLS=$(printf '%s\n' "$PR_BODY" | grep -Eo 'https?://[^[:space:)\]"\']+' || true)
-
+          echo "$PR_BODY" > pr_body.txt
+          URLS=$(grep -Eo 'https?://[^[:space:)\]"\']+' pr_body.txt || true)
           if [ -z "$URLS" ]; then
-            echo "No URLs found in PR body."
             echo "has_urls=false" >> $GITHUB_OUTPUT
             echo "has_localhost=false" >> $GITHUB_OUTPUT
             exit 0
@@ -31,40 +29,17 @@ jobs:
 
           ARGS=""
           ANY_LOCALHOST=false
-          CLEANED_LIST=""
-
-          for u in $URLS; do
-            # trim trailing punctuation
-            clean=$(echo "$u" | sed 's/[),.;:]*$//')
-            ARGS="$ARGS --collect.url=$clean"
-            CLEANED_LIST="$CLEANED_LIST$clean\n"
-
-            # detect localhost or 127.0.0.1
-            if echo "$clean" | grep -E 'https?://(localhost|127\.0\.0\.1)(:[0-9]+)?' >/dev/null; then
+          while read -r url; do
+            clean_url=$(echo "$url" | sed 's/[),.;:]*$//')
+            ARGS="$ARGS --collect.url=$clean_url"
+            if echo "$clean_url" | grep -qE 'https?://(localhost|127\.0\.0\.1)'; then
               ANY_LOCALHOST=true
             fi
-          done
+          done <<< "$URLS"
 
-          # export args for later steps
           echo "ARGS=$ARGS" >> $GITHUB_ENV
-
-          # export collected list as a multiline output for debugging
-          echo "collected_urls<<EOF" >> $GITHUB_OUTPUT
-          printf '%b' "$CLEANED_LIST" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
           echo "has_urls=true" >> $GITHUB_OUTPUT
-          if [ "$ANY_LOCALHOST" = true ]; then
-            echo "has_localhost=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_localhost=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Show collected URLs (debug)
-        if: steps.extract.outputs.has_urls == 'true'
-        run: |
-          echo "Collected URLs from PR body:"
-          printf '%b\n' "${{ steps.extract.outputs.collected_urls || '' }}"
+          echo "has_localhost=$ANY_LOCALHOST" >> $GITHUB_OUTPUT
 
       - name: Checkout code (only if localhost URLs provided)
         if: steps.extract.outputs.has_localhost == 'true'
@@ -82,20 +57,19 @@ jobs:
         if: steps.extract.outputs.has_localhost == 'true'
         shell: bash
         run: |
-          # serve ./public on port 9000; change if you use a different tool or port
           npx http-server ./public -p 9000 --silent &
-
           TIMEOUT=60
-          START=0
+          COUNT=0
           until curl -sSf http://localhost:9000/ >/dev/null; do
             sleep 1
-            START=$((START+1))
-            if [ $START -ge $TIMEOUT ]; then
-              echo "Server did not start within ${TIMEOUT}s"
+            COUNT=$((COUNT+1))
+            if [ $COUNT -ge $TIMEOUT ]; then
+              echo "Server did not start within timeout"
               exit 1
             fi
           done
-          echo "Local server ready on http://localhost:9000/"
+
+          echo "Local server ready"
 
       - name: Run Lighthouse CI for supplied URLs
         if: steps.extract.outputs.has_urls == 'true'
@@ -103,11 +77,9 @@ jobs:
           LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
         run: |
           npm install -g @lhci/cli@0.15.x
-
           if [ -z "${ARGS}" ]; then
-            echo "No ARGS found, nothing to run."
+            echo "No URLs provided. Skipping LHCI."
             exit 0
           fi
-
-          echo "Running: lhci autorun $ARGS"
-          eval "lhci autorun $ARGS"
+          echo "Running LHCI autorun with URLs: $ARGS"
+          lhci autorun $ARGS
