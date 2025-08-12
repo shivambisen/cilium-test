@@ -11,49 +11,54 @@ jobs:
 
     steps:
       - name: Extract URLs from PR body
-        id: extract
-        shell: bash
-        run: |
-          PR_BODY="${{ github.event.pull_request.body || '' }}"
+  id: extract
+  shell: bash
+  run: |
+    # Save PR body to a file with safe heredoc expansion
+    cat <<'EOF' > pr_body.txt
+${{ github.event.pull_request.body || '' }}
+EOF
 
-          # Extract URLs into bash array safely, removing trailing punctuation except / or #
-          mapfile -t URLS < <(echo "$PR_BODY" | grep -Eo 'https?://[^ )"\']+' | sed 's/[),.;:]*$//')
+    PR_BODY=$(cat pr_body.txt)
 
-          if [ ${#URLS[@]} -eq 0 ]; then
-            echo "No URLs found in PR body."
-            echo "has_urls=false" >> $GITHUB_OUTPUT
-            echo "has_localhost=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
+    # Extract URLs from PR_BODY safely
+    URLS=$(printf '%s\n' "$PR_BODY" | grep -Eo 'https?://[^[:space:)\]"\']+' || true)
 
-          ARGS=()
-          CLEANED_LIST=""
-          ANY_LOCALHOST=false
+    if [ -z "$URLS" ]; then
+      echo "No URLs found in PR body."
+      echo "has_urls=false" >> $GITHUB_OUTPUT
+      echo "has_localhost=false" >> $GITHUB_OUTPUT
+      exit 0
+    fi
 
-          for url in "${URLS[@]}"; do
-            ARGS+=("--collect.url=$url")
-            CLEANED_LIST+="$url\n"
+    ARGS=""
+    ANY_LOCALHOST=false
+    CLEANED_LIST=""
 
-            if [[ "$url" =~ https?://(localhost|127\.0\.0\.1)(:[0-9]+)? ]]; then
-              ANY_LOCALHOST=true
-            fi
-          done
+    # Use a while-read loop with process substitution for safe line reading
+    while IFS= read -r u; do
+      clean=$(echo "$u" | sed 's/[),.;:]*$//')
+      ARGS="$ARGS --collect.url=$clean"
+      CLEANED_LIST="$CLEANED_LIST$clean\n"
 
-          # Join ARGS array into space-separated string for env var
-          ARGS_STR="${ARGS[*]}"
-          echo "ARGS=$ARGS_STR" >> $GITHUB_ENV
+      if echo "$clean" | grep -E 'https?://(localhost|127\.0\.0\.1)(:[0-9]+)?' >/dev/null; then
+        ANY_LOCALHOST=true
+      fi
+    done <<< "$URLS"
 
-          # Set multiline output for collected URLs (for debug)
-          echo -e "collected_urls<<EOF" >> $GITHUB_OUTPUT
-          echo -e "$CLEANED_LIST" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+    echo "ARGS=$ARGS" >> $GITHUB_ENV
 
-          echo "has_urls=true" >> $GITHUB_OUTPUT
-          if $ANY_LOCALHOST; then
-            echo "has_localhost=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_localhost=false" >> $GITHUB_OUTPUT
-          fi
+    echo "collected_urls<<EOF" >> $GITHUB_OUTPUT
+    printf '%b' "$CLEANED_LIST" >> $GITHUB_OUTPUT
+    echo "EOF" >> $GITHUB_OUTPUT
+
+    echo "has_urls=true" >> $GITHUB_OUTPUT
+
+    if [ "$ANY_LOCALHOST" = true ]; then
+      echo "has_localhost=true" >> $GITHUB_OUTPUT
+    else
+      echo "has_localhost=false" >> $GITHUB_OUTPUT
+    fi
 
       - name: Show collected URLs (debug)
         if: steps.extract.outputs.has_urls == 'true'
