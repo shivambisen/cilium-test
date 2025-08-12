@@ -7,7 +7,7 @@
   </picture>
 </div>
 fsfdfsd
-dsdsdvcvcxcxcx
+dsdsdvcv
 
 <!-- Horizontal badges -->
 <p align="center">
