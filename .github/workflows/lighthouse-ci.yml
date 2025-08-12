@@ -15,40 +15,41 @@ jobs:
         shell: bash
         run: |
           PR_BODY="${{ github.event.pull_request.body || '' }}"
-          URLS=$(printf '%s\n' "$PR_BODY" | grep -Eo 'https?://[^[:space:)\]"\']+' || true)
 
-          if [ -z "$URLS" ]; then
+          # Extract URLs into bash array safely, removing trailing punctuation except / or #
+          mapfile -t URLS < <(echo "$PR_BODY" | grep -Eo 'https?://[^ )"\']+' | sed 's/[),.;:]*$//')
+
+          if [ ${#URLS[@]} -eq 0 ]; then
+            echo "No URLs found in PR body."
             echo "has_urls=false" >> $GITHUB_OUTPUT
             echo "has_localhost=false" >> $GITHUB_OUTPUT
             exit 0
           fi
 
           ARGS=()
-          ANY_LOCALHOST=false
           CLEANED_LIST=""
+          ANY_LOCALHOST=false
 
-          printf '%s\n' "$URLS" | while IFS= read -r u; do
-            clean=$(echo "$u" | sed 's/[),.;:]*$//')
-            ARGS+=("--collect.url=$clean")
-            CLEANED_LIST="$CLEANED_LIST$clean\n"
+          for url in "${URLS[@]}"; do
+            ARGS+=("--collect.url=$url")
+            CLEANED_LIST+="$url\n"
 
-            if echo "$clean" | grep -E 'https?://(localhost|127\.0\.0\.1)(:[0-9]+)?' >/dev/null; then
+            if [[ "$url" =~ https?://(localhost|127\.0\.0\.1)(:[0-9]+)? ]]; then
               ANY_LOCALHOST=true
             fi
           done
 
-          # Bash arrays are not directly exportable to env, so join with space
+          # Join ARGS array into space-separated string for env var
           ARGS_STR="${ARGS[*]}"
           echo "ARGS=$ARGS_STR" >> $GITHUB_ENV
 
-          {
-            echo "collected_urls<<EOF"
-            printf '%b' "$CLEANED_LIST"
-            echo "EOF"
-          } >> $GITHUB_OUTPUT
+          # Set multiline output for collected URLs (for debug)
+          echo -e "collected_urls<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$CLEANED_LIST" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
           echo "has_urls=true" >> $GITHUB_OUTPUT
-          if [ "$ANY_LOCALHOST" = true ]; then
+          if $ANY_LOCALHOST; then
             echo "has_localhost=true" >> $GITHUB_OUTPUT
           else
             echo "has_localhost=false" >> $GITHUB_OUTPUT
@@ -97,10 +98,12 @@ jobs:
         shell: bash
         run: |
           npm install -g @lhci/cli@0.15.x
+
           if [ -z "${ARGS}" ]; then
-            echo "No ARGS found, nothing to run."
+            echo "No URLs provided, skipping Lighthouse run."
             exit 0
           fi
+
           echo "Running: lhci autorun ${ARGS}"
-          # Use 'eval' carefully, but here replacing with 'lhci autorun' with args expanded:
+          # Run LHCI with all --collect.url arguments expanded
           lhci autorun ${ARGS}
