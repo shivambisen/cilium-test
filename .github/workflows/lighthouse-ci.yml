@@ -23,7 +23,7 @@ jobs:
             echo "should_run=false" >> $GITHUB_OUTPUT
           fi
 
-      # The following steps now all depend on the output of the trigger_check step
+
       - name: Extract and build URLs from PR body paths
         id: extract
         if: steps.trigger_check.outputs.should_run == 'true'
@@ -31,24 +31,26 @@ jobs:
         env:
           PR_BODY: ${{ github.event.pull_request.body || '' }}
         run: |
-          # The logic inside this step remains the same
           echo "$PR_BODY" > pr_body.txt
-          PATHS=$(grep -Eo '^/[a-zA-Z0-9/_.-]*$' pr_body.txt || true)
 
-          if [ -z "$PATHS" ]; then
+          # A more robust way to read each path and build the ARGS string
+          ARGS=""
+          while read -r path; do
+            # The -n flag ensures we only process non-empty lines
+            if [ -n "$path" ]; then
+              clean_path=$(echo "$path" | sed 's/[),.;:]*$//')
+              full_url="http://localhost:9000$clean_path"
+              ARGS="$ARGS --collect.url='$full_url'"
+            fi
+          done < <(grep -Eo '^/[a-zA-Z0-9/_.-]*$' pr_body.txt || true)
+          
+          # This part remains the same
+          if [ -z "$ARGS" ]; then
             echo "has_urls=false" >> $GITHUB_OUTPUT
             echo "has_localhost=false" >> $GITHUB_OUTPUT
             exit 0
           fi
-
-          readarray -t PATH_ARRAY <<< "$PATHS"
-          ARGS=""
-          for path in "${PATH_ARRAY[@]}"; do
-            clean_path=$(echo "$path" | sed 's/[),.;:]*$//')
-            full_url="http://localhost:9000$clean_path"
-            ARGS="$ARGS --collect.url='$full_url'"
-          done
-
+          
           echo "ARGS=$ARGS" >> $GITHUB_ENV
           echo "has_urls=true" >> $GITHUB_OUTPUT
           echo "has_localhost=true" >> $GITHUB_OUTPUT
