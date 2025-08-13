@@ -4,7 +4,7 @@ module.exports = {
       staticDistDir: './public',
       numberOfRuns: 1,
       settings: {
-        emulatedFormFactor: 'website',
+        emulatedFormFactor: 'Desktop',
         throttlingMethod: 'simulate',
       },
     },

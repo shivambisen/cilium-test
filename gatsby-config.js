@@ -242,7 +242,7 @@ const plugins = [
   {
     resolve: 'gatsby-plugin-canonical-urls',
     options: {
-      siteUrl: 'https://cilium.io',
+      siteUrl: process.env.GATSBY_DEFAULT_SITE_URL || 'https://cilium.io',
     },
   },
   {
@@ -281,7 +281,7 @@ module.exports = {
     // pathPrefix: "",
     siteImage: '/images/social-preview.jpg',
     siteLanguage: 'en',
-    siteUrl: 'https://cilium.io', // No trailing slash!,
+    siteUrl: process.env.GATSBY_DEFAULT_SITE_URL || 'https://cilium.io',
     /* author */
     authorName: 'cilium',
     authorTwitterAccount: '@ciliumproject',

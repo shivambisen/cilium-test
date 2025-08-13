@@ -1,9 +1,10 @@
-name: CI - LHCI for PR URLs (supports localhost)
+name: CI - Lighthouse CI
 
 on:
   pull_request:
     branches:
       - lighthouse-CI
+      - main
 
 jobs:
   lhci:
@@ -21,7 +22,7 @@ jobs:
         run: |
           echo "$PR_BODY" > pr_body.txt
           # Find strings that start with a '/' to identify them as paths.
-          PATHS=$(grep -Eo '/[a-zA-Z0-9/_.-]*' pr_body.txt || true)
+          PATHS=$(grep -Eo '^/[a-zA-Z0-9/_.-]*$' pr_body.txt || true)
 
           if [ -z "$PATHS" ]; then
             echo "has_urls=false" >> $GITHUB_OUTPUT
