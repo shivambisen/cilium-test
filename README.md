@@ -1,4 +1,4 @@
-ghgdfdsfdsfdgdfhggghjgffdfd# Cilium Website
+# Cilium Website
 
 <div align="center">dfsfsd
   <picture>
