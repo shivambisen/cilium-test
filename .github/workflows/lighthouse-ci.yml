@@ -1,31 +1,79 @@
-name: CI
-on: [push]
+name: CI - LHCI for PR URLs (supports localhost)
+
+on:
+  pull_request:
+    branches:
+      - lighthouse-CI
+
 jobs:
   lhci:
-    name: Lighthouse
     runs-on: ubuntu-latest
     env:
       NODE_OPTIONS: --max-old-space-size=8192
       GATSBY_CONCURRENT_DOWNLOAD: 1
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Extract URLs from PR body
+        id: extract
+        shell: bash
+        env:
+          PR_BODY: ${{ github.event.pull_request.body || '' }}
+        run: |
+          echo "$PR_BODY" > pr_body.txt
+          URLS=$(grep -Eo 'https?://[^[:space:)\]"\']+' pr_body.txt || true)
+          if [ -z "$URLS" ]; then
+            echo "has_urls=false" >> $GITHUB_OUTPUT
+            echo "has_localhost=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          ARGS=""
+          ANY_LOCALHOST=false
+          while read -r url; do
+            clean_url=$(echo "$url" | sed 's/[),.;:]*$//')
+            ARGS="$ARGS --collect.url=$clean_url"
+            if echo "$clean_url" | grep -qE 'https?://(localhost|127\.0\.0\.1)'; then
+              ANY_LOCALHOST=true
+            fi
+          done <<< "$URLS"
+          echo "ARGS=$ARGS" >> $GITHUB_ENV
+          echo "has_urls=true" >> $GITHUB_OUTPUT
+          echo "has_localhost=$ANY_LOCALHOST" >> $GITHUB_OUTPUT
+      - name: Checkout code (only if localhost URLs provided)
+        if: steps.extract.outputs.has_localhost == 'true'
+        uses: actions/checkout@v3
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Use Node.js 20.x
-        uses: actions/setup-node@v3
-        with:
-          node-version: 20.x
-
-      - name: npm install, build
+      - name: npm install & build (only for localhost URLs)
+        if: steps.extract.outputs.has_localhost == 'true'
         run: |
-          npm install
+          npm ci
           npm run build
-
-      - name: run Lighthouse CI
+      - name: Start static server (only for localhost URLs)
+        if: steps.extract.outputs.has_localhost == 'true'
+        shell: bash
         run: |
-          npm install -g @lhci/cli@0.15.x
-          lhci autorun
+          npx http-server ./public -p 9000 --silent &
+          TIMEOUT=60
+          COUNT=0
+          until curl -sSf http://localhost:9000/ >/dev/null; do
+            sleep 1
+            COUNT=$((COUNT+1))
+            if [ $COUNT -ge $TIMEOUT ]; then
+              echo "Server did not start within timeout"
+              exit 1
+            fi
+          done
+          echo "Local server ready"
+      - name: Run Lighthouse CI for supplied URLs
+        if: steps.extract.outputs.has_urls == 'true'
         env:
           LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+        run: |
+          npm install -g @lhci/cli@0.15.x
+          if [ -z "${ARGS}" ]; then
+            echo "No URLs provided. Skipping LHCI."
+            exit 0
+          fi
+          echo "Running LHCI autorun with URLs: $ARGS"
+          lhci autorun $ARGS
