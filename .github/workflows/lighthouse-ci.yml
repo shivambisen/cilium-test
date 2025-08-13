@@ -13,31 +13,41 @@ jobs:
       GATSBY_CONCURRENT_DOWNLOAD: 1
 
     steps:
-      - name: Extract URLs from PR body
+      - name: Extract and build URLs from PR body paths
         id: extract
         shell: bash
         env:
           PR_BODY: ${{ github.event.pull_request.body || '' }}
         run: |
           echo "$PR_BODY" > pr_body.txt
-          URLS=$(grep -Eo 'https?://[^[:space:)\]"\']+' pr_body.txt || true)
-          if [ -z "$URLS" ]; then
+          # 1. Find strings that start with a '/' to identify them as paths.
+          PATHS=$(grep -Eo '/[a-zA-Z0-9/_.-]*' pr_body.txt || true)
+
+          if [ -z "$PATHS" ]; then
             echo "has_urls=false" >> $GITHUB_OUTPUT
+            # Since all paths are for localhost, this is now always false if no paths are found.
             echo "has_localhost=false" >> $GITHUB_OUTPUT
             exit 0
           fi
+
+          readarray -t PATH_ARRAY <<< "$PATHS"
+
           ARGS=""
-          ANY_LOCALHOST=false
-          while read -r url; do
-            clean_url=$(echo "$url" | sed 's/[),.;:]*$//')
-            ARGS="$ARGS --collect.url=$clean_url"
-            if echo "$clean_url" | grep -qE 'https?://(localhost|127\.0\.0\.1)'; then
-              ANY_LOCALHOST=true
-            fi
-          done <<< "$URLS"
+          for path in "${PATH_ARRAY[@]}"; do
+            # 2. Construct the full localhost URL from the path.
+            # We also clean trailing punctuation just in case.
+            clean_path=$(echo "$path" | sed 's/[),.;:]*$//')
+            full_url="http://localhost:9000$clean_path"
+
+            # 3. Add the properly quoted URL to the arguments string.
+            ARGS="$ARGS --collect.url='$full_url'"
+          done
+
           echo "ARGS=$ARGS" >> $GITHUB_ENV
           echo "has_urls=true" >> $GITHUB_OUTPUT
-          echo "has_localhost=$ANY_LOCALHOST" >> $GITHUB_OUTPUT
+          # If we found paths, we are definitely running on localhost.
+          echo "has_localhost=true" >> $GITHUB_OUTPUT
+          
       - name: Checkout code (only if localhost URLs provided)
         if: steps.extract.outputs.has_localhost == 'true'
         uses: actions/checkout@v3
