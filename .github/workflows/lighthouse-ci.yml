@@ -26,7 +26,6 @@ jobs:
             echo "has_localhost=false" >> $GITHUB_OUTPUT
             exit 0
           fi
-
           ARGS=""
           ANY_LOCALHOST=false
           while read -r url; do
@@ -36,11 +35,9 @@ jobs:
               ANY_LOCALHOST=true
             fi
           done <<< "$URLS"
-
           echo "ARGS=$ARGS" >> $GITHUB_ENV
           echo "has_urls=true" >> $GITHUB_OUTPUT
           echo "has_localhost=$ANY_LOCALHOST" >> $GITHUB_OUTPUT
-
       - name: Checkout code (only if localhost URLs provided)
         if: steps.extract.outputs.has_localhost == 'true'
         uses: actions/checkout@v3
@@ -52,7 +49,6 @@ jobs:
         run: |
           npm ci
           npm run build
-
       - name: Start static server (only for localhost URLs)
         if: steps.extract.outputs.has_localhost == 'true'
         shell: bash
@@ -68,9 +64,7 @@ jobs:
               exit 1
             fi
           done
-
           echo "Local server ready"
-
       - name: Run Lighthouse CI for supplied URLs
         if: steps.extract.outputs.has_urls == 'true'
         env:

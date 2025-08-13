@@ -1,6 +1,8 @@
 module.exports = {
   ci: {
     collect: {
+      staticDistDir: './public',
+
       numberOfRuns: 1,
       settings: {
         emulatedFormFactor: 'desktop',
