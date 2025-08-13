@@ -1,4 +1,4 @@
-name: CI - Lighthouse CI
+name: CI - LHCI for PR URLs (supports localhost)
 
 on:
   pull_request:
@@ -14,14 +14,25 @@ jobs:
       GATSBY_CONCURRENT_DOWNLOAD: 1
 
     steps:
+      - name: Check for Lighthouse Trigger
+        id: trigger_check
+        run: |
+          if grep -q "Lighthouse Test" <<< "${{ github.event.pull_request.body }}"; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          fi
+
+      # The following steps now all depend on the output of the trigger_check step
       - name: Extract and build URLs from PR body paths
         id: extract
+        if: steps.trigger_check.outputs.should_run == 'true'
         shell: bash
         env:
           PR_BODY: ${{ github.event.pull_request.body || '' }}
         run: |
+          # The logic inside this step remains the same
           echo "$PR_BODY" > pr_body.txt
-          # Find strings that start with a '/' to identify them as paths.
           PATHS=$(grep -Eo '^/[a-zA-Z0-9/_.-]*$' pr_body.txt || true)
 
           if [ -z "$PATHS" ]; then
@@ -42,21 +53,21 @@ jobs:
           echo "has_urls=true" >> $GITHUB_OUTPUT
           echo "has_localhost=true" >> $GITHUB_OUTPUT
 
-      - name: Checkout code (only if localhost URLs provided)
-        if: steps.extract.outputs.has_localhost == 'true'
+      - name: Checkout code
+        if: steps.trigger_check.outputs.should_run == 'true' && steps.extract.outputs.has_localhost == 'true'
         uses: actions/checkout@v3
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: npm install & build (only for localhost URLs)
-        if: steps.extract.outputs.has_localhost == 'true'
+      - name: Install dependencies & build
+        if: steps.trigger_check.outputs.should_run == 'true' && steps.extract.outputs.has_localhost == 'true'
         run: |
           rm -rf .cache public
           npm ci
           npm run build
 
-      - name: Start static server (only for localhost URLs)
-        if: steps.extract.outputs.has_localhost == 'true'
+      - name: Start static server
+        if: steps.trigger_check.outputs.should_run == 'true' && steps.extract.outputs.has_localhost == 'true'
         shell: bash
         run: |
           npx http-server ./public -p 9000 --silent &
@@ -71,9 +82,9 @@ jobs:
             fi
           done
           echo "Local server ready"
-      
+
       - name: Run Lighthouse CI for supplied URLs
-        if: steps.extract.outputs.has_urls == 'true'
+        if: steps.trigger_check.outputs.should_run == 'true' && steps.extract.outputs.has_urls == 'true'
         env:
           LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
         run: |
