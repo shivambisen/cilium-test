@@ -20,34 +20,27 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body || '' }}
         run: |
           echo "$PR_BODY" > pr_body.txt
-          # 1. Find strings that start with a '/' to identify them as paths.
+          # Find strings that start with a '/' to identify them as paths.
           PATHS=$(grep -Eo '/[a-zA-Z0-9/_.-]*' pr_body.txt || true)
 
           if [ -z "$PATHS" ]; then
             echo "has_urls=false" >> $GITHUB_OUTPUT
-            # Since all paths are for localhost, this is now always false if no paths are found.
             echo "has_localhost=false" >> $GITHUB_OUTPUT
             exit 0
           fi
 
           readarray -t PATH_ARRAY <<< "$PATHS"
-
           ARGS=""
           for path in "${PATH_ARRAY[@]}"; do
-            # 2. Construct the full localhost URL from the path.
-            # We also clean trailing punctuation just in case.
             clean_path=$(echo "$path" | sed 's/[),.;:]*$//')
             full_url="http://localhost:9000$clean_path"
-
-            # 3. Add the properly quoted URL to the arguments string.
             ARGS="$ARGS --collect.url='$full_url'"
           done
 
           echo "ARGS=$ARGS" >> $GITHUB_ENV
           echo "has_urls=true" >> $GITHUB_OUTPUT
-          # If we found paths, we are definitely running on localhost.
           echo "has_localhost=true" >> $GITHUB_OUTPUT
-          
+
       - name: Checkout code (only if localhost URLs provided)
         if: steps.extract.outputs.has_localhost == 'true'
         uses: actions/checkout@v3
@@ -57,8 +50,10 @@ jobs:
       - name: npm install & build (only for localhost URLs)
         if: steps.extract.outputs.has_localhost == 'true'
         run: |
+          rm -rf .cache public
           npm ci
           npm run build
+
       - name: Start static server (only for localhost URLs)
         if: steps.extract.outputs.has_localhost == 'true'
         shell: bash
@@ -75,6 +70,7 @@ jobs:
             fi
           done
           echo "Local server ready"
+      
       - name: Run Lighthouse CI for supplied URLs
         if: steps.extract.outputs.has_urls == 'true'
         env:
